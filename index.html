@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hot or Not Elite — Cyberpunk Match</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
+
+      :root {
+        --bg-0: #040912;
+        --bg-1: #0b1020;
+        --panel: rgba(16, 23, 39, 0.78);
+        --panel-strong: rgba(10, 15, 25, 0.9);
+        --line: rgba(255,255,255,0.08);
+        --pink: #ff2d55;
+        --pink-2: #ff617d;
+        --rose: #ff7a7a;
+        --cyan: #00f2fe;
+        --violet: #7b3ff2;
+        --amber: #ffb454;
+        --green: #34d399;
+        --text: #edf2ff;
+        --muted: #9ca8c3;
+      }
+
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg-0);
+        color: var(--text);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        overflow-x: hidden;
+      }
+
+      body {
+        user-select: none;
+        background:
+          radial-gradient(circle at 10% 10%, rgba(255,45,85,0.18), transparent 30%),
+          radial-gradient(circle at 85% 85%, rgba(0,242,254,0.13), transparent 25%),
+          linear-gradient(180deg, #030816 0%, #070d1b 32%, #050912 100%);
+      }
+
+      * { box-sizing: border-box; }
+
+      #bgCanvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      .ambient-glow {
+        position: fixed;
+        width: 640px;
+        height: 640px;
+        border-radius: 50%;
+        filter: blur(100px);
+        pointer-events: none;
+        z-index: 1;
+        opacity: 0.7;
+      }
+
+      .ambient-glow.pink { background: rgba(255,45,85,0.16); left: -12%; top: -12%; }
+      .ambient-glow.cyan { background: rgba(0,242,254,0.12); right: -14%; bottom: -12%; }
+
+      .glass {
+        background: rgba(11, 15, 25, 0.68);
+        border: 1px solid var(--line);
+        box-shadow: 0 30px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+
+      .hud-frame {
+        position: relative;
+      }
+
+      .hud-frame::before,
+      .hud-frame::after {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-color: var(--pink);
+        border-style: solid;
+        pointer-events: none;
+      }
+
+      .hud-frame::before {
+        left: 14px;
+        top: 14px;
+        border-width: 2px 0 0 2px;
+      }
+
+      .hud-frame::after {
+        right: 14px;
+        bottom: 14px;
+        border-width: 0 2px 2px 0;
+        border-color: var(--cyan);
+      }
+
+      .gradient-text {
+        background: linear-gradient(135deg, #ff2d55 0%, #ff7e63 32%, #ffb454 58%, #00f2fe 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .pulse {
+        animation: pulseGlow 3.2s ease-in-out infinite;
+      }
+
+      @keyframes pulseGlow {
+        0%, 100% { transform: scale(1); opacity: 0.7; }
+        50% { transform: scale(1.08); opacity: 1; }
+      }
+
+      @keyframes scan {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      .radar-sweep {
+        animation: scan 4s linear infinite;
+        transform-origin: center;
+      }
+
+      .custom-scroll::-webkit-scrollbar { width: 6px; }
+      .custom-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255,45,85,0.35);
+        border-radius: 999px;
+      }
+      .custom-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
+
+      .card-shell {
+        perspective: 1200px;
+      }
+
+      .card-3d {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        transition: transform 0.7s ease;
+      }
+
+      .card-shell.flipped .card-3d {
+        transform: rotateY(180deg);
+      }
+
+      .card-face {
+        position: absolute;
+        inset: 0;
+        backface-visibility: hidden;
+        border-radius: 1.2rem;
+        overflow: hidden;
+      }
+
+      .card-back { transform: rotateY(180deg); }
+
+      .chip {
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.04);
+      }
+
+      .soft-ring {
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 0 40px rgba(0,242,254,0.15);
+      }
+    </style>
+  </head>
+  <body class="relative min-h-screen">
+    <canvas id="bgCanvas"></canvas>
+    <div class="ambient-glow pink"></div>
+    <div class="ambient-glow cyan"></div>
+
+    <header class="relative z-30 w-full px-4 sm:px-8 py-4">
+      <div class="glass rounded-[28px] px-4 py-3 flex items-center justify-between border border-white/10">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="switchView('profile')">
+          <div class="relative">
+            <div class="absolute inset-0 rounded-2xl bg-gradient-to-r from-pink-500 to-cyan-400 blur-md opacity-70 pulse"></div>
+            <div class="relative w-12 h-12 rounded-2xl bg-gradient-to-r from-pink-600 via-rose-500 to-amber-400 flex items-center justify-center text-2xl shadow-xl">🔥</div>
+          </div>
+          <div>
+            <div class="text-[10px] tracking-[0.26em] uppercase font-black text-pink-400">Elite Radar</div>
+            <h1 class="text-lg sm:text-xl font-black gradient-text tracking-[0.08em]">HOT OR NOT</h1>
+          </div>
+        </div>
+
+        <nav class="hidden md:flex items-center gap-2 glass rounded-2xl p-1.5">
+          <button data-view="radar" class="nav-btn px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300 bg-cyan-500/10 border border-cyan-500/20">Radar</button>
+          <button data-view="discover" class="nav-btn px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] text-slate-300 hover:text-white">Descubrir</button>
+          <button data-view="game" class="nav-btn px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] text-slate-300 hover:text-white">Match</button>
+          <button data-view="versus" class="nav-btn px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] text-slate-300 hover:text-white">Versus</button>
+          <button data-view="ranking" class="nav-btn px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] text-slate-300 hover:text-white">Top</button>
+          <button data-view="profile" class="nav-btn px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.18em] text-white bg-gradient-to-r from-pink-600 to-rose-500 shadow-lg shadow-pink-600/30">Perfil</button>
+        </nav>
+
+        <div class="flex items-center gap-3">
+          <button id="soundToggle" class="w-11 h-11 rounded-2xl glass flex items-center justify-center text-xl hover:text-white transition-all">🔊</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="relative z-20 flex justify-center px-3 pb-24 pt-4 sm:px-6">
+      <div class="w-full max-w-[460px] sm:max-w-[520px]">
+
+        <section id="view-radar" class="view-panel">
+          <div class="glass rounded-[32px] p-4 sm:p-5 hud-frame">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <div class="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-black">Radar Ciudad</div>
+                <h2 class="mt-2 text-xl font-black text-white">Zonas calientes en vivo</h2>
+              </div>
+              <button onclick="openZoneModal()" class="px-3 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 text-white text-[10px] font-black uppercase tracking-[0.14em] shadow-lg shadow-pink-600/30">Estado</button>
+            </div>
+
+            <div id="stateBanner" class="hidden mb-4 rounded-2xl border border-pink-500/20 bg-gradient-to-r from-pink-950/30 to-cyan-950/30 px-3 py-2.5 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                <span id="stateText" class="text-[11px] font-bold text-slate-200">Sin estado activo</span>
+              </div>
+              <button onclick="openZoneModal()" class="text-[10px] font-black uppercase tracking-[0.14em] text-pink-300">Cambiar</button>
+            </div>
+
+            <div class="relative w-full h-[290px] overflow-hidden rounded-[28px] border border-cyan-500/30 bg-[#040b15] shadow-inner">
+              <div class="absolute inset-0 bg-[radial-gradient(#00f2fe_1px,transparent_1px)] [background-size:18px_18px] opacity-20"></div>
+              <div class="absolute w-52 h-52 rounded-full border border-cyan-500/20 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+              <div class="absolute w-36 h-36 rounded-full border border-cyan-500/30 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+              <div class="absolute w-16 h-16 rounded-full border border-cyan-500/40 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+              <div class="absolute inset-x-0 top-1/2 h-px bg-cyan-500/20"></div>
+              <div class="absolute inset-y-0 left-1/2 w-px bg-cyan-500/20"></div>
+
+              <div class="absolute w-28 h-28 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+                <div class="radar-sweep w-full h-full rounded-tr-full bg-gradient-to-tr from-cyan-500/40 to-transparent"></div>
+              </div>
+
+              <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-5 h-5 rounded-full bg-pink-500 border-2 border-white shadow-lg shadow-pink-500 flex items-center justify-center animate-pulse">
+                <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+              </div>
+
+              <div id="radarPins" class="absolute inset-0 z-10"></div>
+            </div>
+
+            <div class="mt-4">
+              <div class="mb-2 text-[10px] uppercase tracking-[0.2em] text-slate-400 font-black">Conéctate ahora</div>
+              <div id="activeZoneList" class="space-y-2 max-h-[220px] overflow-y-auto custom-scroll pr-1"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-discover" class="view-panel hidden">
+          <div class="relative">
+            <div class="absolute inset-x-3 -bottom-4 h-full rounded-[32px] glass opacity-50 scale-95"></div>
+            <div class="glass rounded-[32px] overflow-hidden relative z-10 border border-white/10">
+              <div class="relative h-[400px] sm:h-[430px] bg-black overflow-hidden group">
+                <img id="discoverImage" src="" alt="profile" class="w-full h-full object-cover object-center transition-transform duration-700 group-hover:scale-105">
+                <div class="absolute inset-0 bg-gradient-to-t from-[#040915] via-transparent to-black/40"></div>
+                <div class="absolute top-4 left-4 rounded-full glass px-3 py-1.5 border border-white/10 text-[9px] font-black tracking-[0.18em] uppercase text-cyan-300">Elite verified</div>
+                <div class="absolute inset-x-0 bottom-0 p-5">
+                  <h2 id="discoverName" class="text-[28px] font-black text-white leading-none">Cargando...</h2>
+                  <div class="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-200">
+                    <span class="text-pink-400">📍</span>
+                    <span id="discoverCity">Madrid</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="p-4 sm:p-5 bg-[#0c1220]/90 border-t border-white/10">
+                <div class="flex items-center justify-between px-1 mb-2">
+                  <span class="text-[10px] uppercase tracking-[0.18em] font-black text-pink-400">Neural attraction</span>
+                  <span class="text-[10px] text-cyan-300 font-black bg-cyan-500/10 px-2 py-1 rounded-full border border-cyan-500/20">10 = Match</span>
+                </div>
+
+                <div id="ratingButtons" class="grid grid-cols-10 gap-1"></div>
+
+                <div class="mt-4 grid grid-cols-2 gap-3">
+                  <button onclick="vote(2)" class="py-3 rounded-2xl bg-red-950/40 text-red-300 border border-red-500/30 font-black text-[11px] uppercase tracking-[0.12em]">Pass</button>
+                  <button onclick="vote(10)" class="py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-pink-500 to-rose-500 font-black text-[11px] uppercase tracking-[0.12em] text-white shadow-lg shadow-pink-600/30">Super Hot</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-game" class="view-panel hidden">
+          <div class="glass rounded-[32px] p-4 sm:p-5 hud-frame">
+            <div class="mb-4 text-center">
+              <div class="text-[10px] uppercase tracking-[0.18em] text-pink-400 font-black">Memory Match</div>
+              <h2 class="mt-2 text-2xl font-black text-white">Descubre tu match</h2>
+              <p class="mt-1 text-xs text-slate-400">Tienes 2 intentos para acertar el par correcto.</p>
+            </div>
+
+            <div id="triesLabel" class="mt-2 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-center text-[11px] font-black uppercase tracking-[0.14em] text-cyan-300">
+              Intentos restantes: 2 / 2
+            </div>
+
+            <div id="memoryGrid" class="mt-4 grid grid-cols-2 gap-3"></div>
+            <div id="gameStatus" class="mt-3 min-h-[20px] text-center text-[11px] font-black uppercase tracking-[0.12em] text-slate-300"></div>
+
+            <div id="gameLock" class="hidden mt-4 rounded-2xl border border-rose-500/30 bg-rose-950/30 px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-rose-200 text-center">
+              Has agotado tus intentos de hoy.
+            </div>
+          </div>
+        </section>
+
+        <section id="view-versus" class="view-panel hidden">
+          <div class="glass rounded-[32px] p-4 sm:p-5 hud-frame">
+            <div class="text-center mb-4">
+              <div class="text-[10px] uppercase tracking-[0.18em] text-amber-400 font-black">Versus 1v1</div>
+              <h2 class="mt-2 text-[28px] font-black text-white">¿Quién gana?</h2>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 sm:gap-4">
+              <div onclick="voteVersus(0)" class="group cursor-pointer rounded-[24px] border border-white/10 bg-black/20 p-3 transition hover:border-pink-500/50 hover:-translate-y-1">
+                <img id="versus1Image" src="" class="w-full h-44 object-cover rounded-2xl border border-white/10" />
+                <div class="mt-3 text-center">
+                  <div id="versus1Name" class="font-black text-white text-sm">Perfil 1</div>
+                  <div class="mt-2 inline-block rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-pink-300">Votar</div>
+                </div>
+              </div>
+
+              <div onclick="voteVersus(1)" class="group cursor-pointer rounded-[24px] border border-white/10 bg-black/20 p-3 transition hover:border-pink-500/50 hover:-translate-y-1">
+                <img id="versus2Image" src="" class="w-full h-44 object-cover rounded-2xl border border-white/10" />
+                <div class="mt-3 text-center">
+                  <div id="versus2Name" class="font-black text-white text-sm">Perfil 2</div>
+                  <div class="mt-2 inline-block rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-pink-300">Votar</div>
+                </div>
+              </div>
+            </div>
+
+            <button onclick="loadVersus()" class="mt-4 w-full py-3 rounded-2xl border border-white/10 bg-black/20 text-[11px] font-black uppercase tracking-[0.14em] text-slate-200">Cambiar batalla</button>
+          </div>
+        </section>
+
+        <section id="view-ranking" class="view-panel hidden">
+          <div class="glass rounded-[32px] p-4 sm:p-5 hud-frame">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-2xl flex items-center justify-center">👑</div>
+                <h2 class="text-xl font-black text-white">Top 10 Elite</h2>
+              </div>
+              <span class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-300">Live</span>
+            </div>
+            <div id="rankingList" class="space-y-2.5 max-h-[440px] overflow-y-auto custom-scroll pr-1"></div>
+          </div>
+        </section>
+
+        <section id="view-profile" class="view-panel hidden">
+          <div class="glass rounded-[32px] p-4 sm:p-5 hud-frame">
+            <div class="relative overflow-hidden rounded-[28px] border border-white/10 shadow-2xl bg-[#0b1120] mb-4">
+              <div class="relative h-36 w-full group cursor-pointer" onclick="openProfileModal()">
+                <img id="myCover" src="" class="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition" />
+                <div class="absolute inset-0 bg-gradient-to-t from-[#0b1120] via-transparent to-transparent"></div>
+                <span class="absolute top-3 right-3 rounded-full border border-white/15 bg-black/50 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white">Editar portada</span>
+              </div>
+
+              <div class="relative -mt-12 flex flex-col items-center pb-4 px-4 text-center">
+                <div class="relative group cursor-pointer" onclick="openProfileModal()">
+                  <div class="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 to-cyan-400 blur-md opacity-60"></div>
+                  <img id="myAvatar" src="" class="relative w-24 h-24 rounded-full object-cover border-2 border-white/30 shadow-2xl" />
+                  <div class="absolute -bottom-1 -right-1 rounded-full border border-white/20 bg-pink-600 px-2 py-0.5 text-[9px] font-black text-white">50%</div>
+                </div>
+                <h3 id="myName" class="mt-3 text-2xl font-black text-white"></h3>
+                <button onclick="openProfileModal()" class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-200">
+                  <span class="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></span>
+                  Actualizar perfil
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 px-4 pb-4">
+                <div class="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <div class="text-[10px] uppercase tracking-[0.12em] text-slate-400">Actividad</div>
+                  <div class="mt-1 text-sm font-black text-rose-300">Muy alta</div>
+                </div>
+                <button onclick="switchView('ranking')" class="rounded-2xl border border-white/10 bg-black/25 p-3 text-center">
+                  <div class="text-[10px] uppercase tracking-[0.12em] text-slate-400">Puntos</div>
+                  <div class="mt-1 text-sm font-black text-cyan-300">Ranking</div>
+                </button>
+              </div>
+            </div>
+
+            <div class="rounded-[28px] border border-white/10 bg-gradient-to-br from-[#0d1424] to-[#070d1a] p-4 mb-4">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="text-lg">✍️</span>
+                <div class="text-[10px] uppercase tracking-[0.2em] text-pink-400 font-black">Crear publicación</div>
+              </div>
+
+              <form onsubmit="handlePostSubmit(event)">
+                <textarea id="postText" rows="2" placeholder="¿Qué quieres compartir hoy?" class="w-full rounded-2xl border border-white/10 bg-black/50 p-3 text-sm text-white outline-none placeholder:text-slate-500 resize-none"></textarea>
+
+                <div id="postPreviewWrap" class="hidden relative mt-3 overflow-hidden rounded-2xl border border-white/10 bg-black/50 h-36">
+                  <img id="postPreview" src="" class="w-full h-full object-cover" />
+                  <button type="button" onclick="removePostImage()" class="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/70 text-white text-xs font-black border border-white/10">✕</button>
+                </div>
+
+                <div class="mt-3 flex items-center justify-between">
+                  <label class="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-pink-300">
+                    <span>📷</span>
+                    <span id="fileKey">Añadir foto</span>
+                    <input id="postImageInput" type="file" accept="image/*" class="hidden" onchange="previewPostImage(event)" />
+                  </label>
+
+                  <button type="submit" class="rounded-2xl bg-gradient-to-r from-pink-600 via-rose-600 to-amber-400 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white shadow-lg shadow-pink-600/30">Publicar</button>
+                </div>
+              </form>
+            </div>
+
+            <div id="feed" class="space-y-3"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#090d1a]/80 backdrop-blur-xl">
+      <div class="flex items-center justify-around px-3 py-2.5">
+        <button data-view="radar" class="nav-btn flex flex-col items-center text-[10px] font-black uppercase tracking-[0.12em] text-cyan-300"><span class="text-xl">📡</span> Radar</button>
+        <button data-view="discover" class="nav-btn flex flex-col items-center text-[10px] font-black uppercase tracking-[0.12em] text-slate-300"><span class="text-xl">📍</span> Descubrir</button>
+        <button data-view="game" class="nav-btn flex flex-col items-center text-[10px] font-black uppercase tracking-[0.12em] text-slate-300"><span class="text-xl">🃏</span> Match</button>
+        <button data-view="versus" class="nav-btn flex flex-col items-center text-[10px] font-black uppercase tracking-[0.12em] text-slate-300"><span class="text-xl">⚔️</span> Versus</button>
+        <button data-view="profile" class="nav-btn flex flex-col items-center text-[10px] font-black uppercase tracking-[0.12em] text-slate-300"><span class="text-xl">👤</span> Perfil</button>
+      </div>
+    </footer>
+
+    <div id="zoneModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-xl p-4">
+      <div class="glass rounded-[32px] p-5 max-w-sm w-full hud-frame">
+        <h3 class="text-center text-xl font-black text-white">Activa tu plan</h3>
+        <p class="mt-2 text-center text-xs text-slate-300">Comparte lo que haces hoy para conectar al instante.</p>
+
+        <div class="mt-4 space-y-2.5">
+          <button onclick="applyZoneState('☕ Tomando algo en Malasaña')" class="w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-left text-[12px] font-bold text-slate-200">☕ Tomando algo en Malasaña</button>
+          <button onclick="applyZoneState('🎸 Buscando cómplice para concierto indie')" class="w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-left text-[12px] font-bold text-slate-200">🎸 Buscando cómplice para concierto indie</button>
+          <button onclick="applyZoneState('🏋️‍♂️ Entrenando en el gym')" class="w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-left text-[12px] font-bold text-slate-200">🏋️‍♂️ Entrenando en el gym</button>
+          <button onclick="applyZoneState('🌅 Paseo al atardecer por el parque')" class="w-full rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-left text-[12px] font-bold text-slate-200">🌅 Paseo al atardecer por el parque</button>
+        </div>
+
+        <button onclick="closeZoneModal()" class="mt-4 w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-300">Cerrar</button>
+      </div>
+    </div>
+
+    <div id="profileModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-xl p-4">
+      <div class="glass rounded-[32px] p-5 max-w-sm w-full max-h-[90vh] overflow-y-auto custom-scroll hud-frame">
+        <h3 class="text-center text-xl font-black text-white">Configurar perfil</h3>
+
+        <form onsubmit="saveProfile(event)" class="mt-4 space-y-3">
+          <div>
+            <label class="block mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-black">Nombre</label>
+            <input id="editName" required class="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-white text-sm outline-none focus:border-pink-500" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-black">Edad</label>
+              <input id="editAge" type="number" required class="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-white text-sm outline-none focus:border-pink-500" />
+            </div>
+            <div>
+              <label class="block mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-black">Ciudad</label>
+              <input id="editCity" required class="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-white text-sm outline-none focus:border-pink-500" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-black">Avatar</label>
+            <div class="mb-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 p-2.5">
+              <img id="avatarPreview" src="" class="w-12 h-12 rounded-full object-cover border border-pink-500" />
+              <span class="text-[10px] text-slate-400">Imagen principal</span>
+            </div>
+            <div class="flex gap-2">
+              <input id="editAvatarUrl" oninput="previewUrlAvatar(this.value)" class="flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-white text-[11px] outline-none focus:border-pink-500" placeholder="URL de avatar" />
+              <label class="cursor-pointer rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white">📁
+                <input type="file" accept="image/*" class="hidden" onchange="previewAvatarFile(event)" />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label class="block mb-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 font-black">Portada</label>
+            <div class="mb-2 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/25 p-2.5">
+              <img id="coverPreview" src="" class="w-16 h-10 rounded-lg object-cover border border-cyan-500" />
+              <span class="text-[10px] text-slate-400">Cabecera</span>
+            </div>
+            <div class="flex gap-2">
+              <input id="editCoverUrl" oninput="previewUrlCover(this.value)" class="flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-white text-[11px] outline-none focus:border-cyan-500" placeholder="URL de portada" />
+              <label class="cursor-pointer rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white">📁
+                <input type="file" accept="image/*" class="hidden" onchange="previewCoverFile(event)" />
+              </label>
+            </div>
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button type="submit" class="flex-1 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white">Guardar</button>
+            <button type="button" onclick="closeProfileModal()" class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="matchModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-xl p-4">
+      <div class="glass rounded-[32px] p-6 max-w-sm w-full relative hud-frame text-center">
+        <div class="absolute left-1/2 -top-8 -translate-x-1/2 w-16 h-16 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-400 flex items-center justify-center text-3xl shadow-2xl animate-bounce">💖</div>
+        <div class="mt-8 text-[11px] uppercase tracking-[0.22em] text-pink-400 font-black">Match neural</div>
+        <h3 class="mt-3 text-2xl font-black gradient-text">¡Conexión perfecta!</h3>
+        <p id="matchText" class="mt-2 text-sm text-slate-300">Canal abierto para hablar.</p>
+        <div class="mt-5 flex gap-3">
+          <button onclick="openChatFromMatch()" class="flex-1 rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-white">Abrir chat</button>
+          <button onclick="closeMatchModal()" class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300">Continuar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="chatModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-xl p-3">
+      <div class="glass rounded-[28px] max-w-md w-full h-[80vh] flex flex-col overflow-hidden hud-frame">
+        <div class="flex items-center justify-between border-b border-white/10 px-3.5 py-3">
+          <div class="flex items-center gap-3">
+            <img id="chatAvatar" src="" class="w-10 h-10 rounded-2xl object-cover border border-pink-500" />
+            <div>
+              <div id="chatName" class="font-black text-white text-sm">Chat</div>
+              <div class="text-[10px] text-emerald-400 font-black uppercase tracking-[0.12em]">Canal seguro</div>
+            </div>
+          </div>
+          <button onclick="closeChatModal()" class="text-xl text-slate-400">✕</button>
+        </div>
+
+        <div id="chatMessages" class="flex-1 overflow-y-auto custom-scroll p-3.5 space-y-2.5"></div>
+
+        <div class="flex gap-2 border-t border-white/10 bg-black/30 p-3">
+          <input id="chatInput" placeholder="Mensaje seguro..." class="flex-1 rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 text-white text-xs outline-none focus:border-pink-500" onkeypress="chatKey(event)" />
+          <button onclick="sendChatMessage()" class="rounded-xl bg-gradient-to-r from-pink-600 to-rose-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-white">Enviar</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const defaultUser = {
+        nombre: 'Toni Carmona',
+        edad: 49,
+        ciudad: 'Madrid',
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=900&q=80',
+        cover: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80',
+        estadoZona: '☕ Tomando algo en Malasaña',
+        posts: []
+      };
+
+      const starterProfiles = [
+        { nombre: 'Ariadna', edad: 22, foto: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1000&q=80', ciudad: 'Madrid', estadoZona: '🎸 Buscando cómplice para concierto indie', rating: 9.7, x: 34, y: 38 },
+        { nombre: 'Lucía', edad: 24, foto: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=1000&q=80', ciudad: 'Madrid', estadoZona: '☕ Tomando algo en Malasaña', rating: 9.5, x: 69, y: 30 },
+        { nombre: 'Valeria', edad: 21, foto: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=1000&q=80', ciudad: 'Madrid', estadoZona: '🏋️‍♂️ Entrenando en el gym', rating: 9.8, x: 26, y: 74 },
+        { nombre: 'Mateo', edad: 26, foto: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=1000&q=80', ciudad: 'Madrid', estadoZona: '🌅 Paseo al atardecer por el parque', rating: 9.2, x: 72, y: 68 },
+        { nombre: 'Claudia', edad: 23, foto: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=1000&q=80', ciudad: 'Madrid', estadoZona: '☕ Tomando algo en Malasaña', rating: 9.6, x: 50, y: 18 },
+        { nombre: 'Alejandro', edad: 25, foto: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=1000&q=80', ciudad: 'Madrid', estadoZona: '🎸 Buscando cómplice para concierto indie', rating: 9.1, x: 80, y: 56 }
+      ];
+
+      const state = {
+        soundEnabled: true,
+        perfiles: [],
+        discoverIndex: 0,
+        currentProfile: null,
+        matchPending: null,
+        versus: [],
+        juegoIntentos: 2,
+        juegoParejas: 0,
+        cartaPrevia: null
+      };
+
+      let myProfile = JSON.parse(localStorage.getItem('hot_or_not_profile')) || { ...defaultUser };
+      myProfile.cover = myProfile.cover || defaultUser.cover;
+      myProfile.estadoZona = myProfile.estadoZona || defaultUser.estadoZona;
+      myProfile.posts = myProfile.posts || [];
+
+      const canvas = document.getElementById('bgCanvas');
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      function buildHeartTexture() {
+        const texCanvas = document.createElement('canvas');
+        texCanvas.width = 128;
+        texCanvas.height = 128;
+        const ctx = texCanvas.getContext('2d');
+        ctx.clearRect(0, 0, 128, 128);
+        ctx.fillStyle = '#ff2d55';
+        ctx.shadowColor = '#ff7a7a';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        const x = 64, y = 40;
+        ctx.moveTo(x, y);
+        ctx.bezierCurveTo(x, y - 18, x - 30, y - 18, x - 30, y + 5);
+        ctx.bezierCurveTo(x - 30, y + 24, x, y + 46, x, y + 55);
+        ctx.bezierCurveTo(x, y + 46, x + 30, y + 24, x + 30, y + 5);
+        ctx.bezierCurveTo(x + 30, y - 18, x, y - 18, x, y);
+        ctx.fill();
+        return new THREE.CanvasTexture(texCanvas);
+      }
+
+      const heartTexture = buildHeartTexture();
+      const positions = new Float32Array(180 * 3);
+      for (let i = 0; i < positions.length; i++) positions[i] = (Math.random() - 0.5) * 18;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const material = new THREE.PointsMaterial({
+        map: heartTexture,
+        size: 0.36,
+        transparent: true,
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const hearts = new THREE.Points(geometry, material);
+      scene.add(hearts);
+      camera.position.z = 5;
+
+      function animateScene() {
+        requestAnimationFrame(animateScene);
+        const t = performance.now() * 0.00045;
+        hearts.rotation.y = t * 0.9;
+        hearts.rotation.x = t * 0.3;
+        renderer.render(scene, camera);
+      }
+      animateScene();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      function initApp() {
+        const savedPool = JSON.parse(localStorage.getItem('hot_or_not_global_pool') || 'null');
+        state.perfiles = [...starterProfiles];
+        if (Array.isArray(savedPool) && savedPool.length) {
+          savedPool.forEach(p => {
+            if (!state.perfiles.some(item => item.nombre.toLowerCase() === p.nombre.toLowerCase())) {
+              state.perfiles.push(p);
+            }
+          });
+        }
+
+        const publicMe = {
+          nombre: myProfile.nombre,
+          edad: myProfile.edad,
+          foto: myProfile.avatar,
+          ciudad: myProfile.ciudad,
+          estadoZona: myProfile.estadoZona,
+          rating: 9.7,
+          x: 50,
+          y: 50
+        };
+
+        if (!state.perfiles.some(p => p.nombre.toLowerCase() === publicMe.nombre.toLowerCase())) {
+          state.perfiles.unshift(publicMe);
+        }
+
+        renderRatingButtons();
+        updateProfileUI();
+        loadDiscover();
+        loadVersus();
+        renderRanking();
+        renderFeed();
+        renderRadar();
+        bindNav();
+        switchView('radar');
+      }
+
+      function bindNav() {
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+          btn.addEventListener('click', () => switchView(btn.dataset.view));
+        });
+      }
+
+      function switchView(viewName) {
+        document.querySelectorAll('.view-panel').forEach(panel => panel.classList.add('hidden'));
+        const target = document.getElementById('view-' + viewName);
+        if (target) target.classList.remove('hidden');
+
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+          const isActive = btn.dataset.view === viewName;
+          if (btn.classList.contains('text-cyan-300') || btn.classList.contains('text-white') || btn.classList.contains('text-slate-300')) {
+            btn.classList.remove('text-cyan-300', 'text-white', 'text-slate-300', 'bg-cyan-500/10', 'border', 'border-cyan-500/20', 'bg-gradient-to-r', 'from-pink-600', 'to-rose-500', 'shadow-lg', 'shadow-pink-600/30');
+          }
+          btn.classList.add(viewName === 'profile' ? 'text-white' : viewName === 'radar' ? 'text-cyan-300' : 'text-slate-300');
+          if (viewName === 'radar') {
+            btn.classList.add('bg-cyan-500/10', 'border', 'border-cyan-500/20');
+          }
+          if (viewName === 'profile') {
+            btn.classList.add('bg-gradient-to-r', 'from-pink-600', 'to-rose-500', 'shadow-lg', 'shadow-pink-600/30');
+          }
+        });
+
+        if (viewName === 'game') initMemoryGame();
+        if (viewName === 'ranking') renderRanking();
+        if (viewName === 'radar') renderRadar();
+      }
+
+      function renderRadar() {
+        const pins = document.getElementById('radarPins');
+        const list = document.getElementById('activeZoneList');
+        pins.innerHTML = '';
+        list.innerHTML = '';
+
+        const banner = document.getElementById('stateBanner');
+        const stateText = document.getElementById('stateText');
+        if (myProfile.estadoZona) {
+          banner.classList.remove('hidden');
+          stateText.textContent = myProfile.estadoZona;
+        }
+
+        state.perfiles.forEach(profile => {
+          if (!profile.x) profile.x = Math.random() * 70 + 12;
+          if (!profile.y) profile.y = Math.random() * 70 + 12;
+
+          const pin = document.createElement('div');
+          pin.className = 'absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer';
+          pin.style.left = profile.x + '%';
+          pin.style.top = profile.y + '%';
+          pin.innerHTML = `
+            <div class="relative flex items-center justify-center">
+              <span class="absolute w-7 h-7 rounded-full bg-cyan-400/30 animate-ping"></span>
+              <img src="${profile.foto || profile.avatar || profile.imagen}" class="w-8 h-8 rounded-full object-cover border-2 border-cyan-400 shadow-lg" />
+            </div>
+          `;
+          pin.onclick = () => openDirectChat(profile);
+          pins.appendChild(pin);
+
+          const row = document.createElement('div');
+          row.className = 'rounded-2xl border border-white/10 bg-black/20 p-2.5 flex items-center justify-between cursor-pointer hover:border-cyan-500/30';
+          row.onclick = () => openDirectChat(profile);
+          row.innerHTML = `
+            <div class="flex items-center gap-3">
+              <img src="${profile.foto || profile.avatar || profile.imagen}" class="w-10 h-10 rounded-2xl object-cover border border-pink-500/30" />
+              <div>
+                <div class="text-[12px] font-black text-white">${profile.nombre}, ${profile.edad}</div>
+                <div class="text-[10px] text-cyan-300">📍 ${profile.estadoZona || 'Disponible esta noche'}</div>
+              </div>
+            </div>
+            <span class="rounded-full bg-pink-500/10 border border-pink-500/20 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-pink-300">Chat</span>
+          `;
+          list.appendChild(row);
+        });
+      }
+
+      function applyZoneState(text) {
+        myProfile.estadoZona = text;
+        localStorage.setItem('hot_or_not_profile', JSON.stringify(myProfile));
+
+        const meIndex = state.perfiles.findIndex(p => p.nombre.toLowerCase() === myProfile.nombre.toLowerCase());
+        if (meIndex >= 0) {
+          state.perfiles[meIndex].estadoZona = text;
+        }
+        localStorage.setItem('hot_or_not_global_pool', JSON.stringify(state.perfiles));
+
+        closeZoneModal();
+        renderRadar();
+        playSound();
+      }
+
+      function openZoneModal() {
+        document.getElementById('zoneModal').classList.remove('hidden');
+        document.getElementById('zoneModal').classList.add('flex');
+      }
+
+      function closeZoneModal() {
+        document.getElementById('zoneModal').classList.add('hidden');
+        document.getElementById('zoneModal').classList.remove('flex');
+      }
+
+      function openProfileModal() {
+        document.getElementById('editName').value = myProfile.nombre;
+        document.getElementById('editAge').value = myProfile.edad;
+        document.getElementById('editCity').value = myProfile.ciudad;
+        document.getElementById('editAvatarUrl').value = myProfile.avatar;
+        document.getElementById('avatarPreview').src = myProfile.avatar;
+        document.getElementById('editCoverUrl').value = myProfile.cover;
+        document.getElementById('coverPreview').src = myProfile.cover;
+        document.getElementById('profileModal').classList.remove('hidden');
+        document.getElementById('profileModal').classList.add('flex');
+      }
+
+      function closeProfileModal() {
+        document.getElementById('profileModal').classList.add('hidden');
+        document.getElementById('profileModal').classList.remove('flex');
+      }
+
+      function previewUrlAvatar(url) {
+        if (url.trim()) document.getElementById('avatarPreview').src = url.trim();
+      }
+
+      function previewAvatarFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          document.getElementById('editAvatarUrl').value = e.target.result;
+          document.getElementById('avatarPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function previewUrlCover(url) {
+        if (url.trim()) document.getElementById('coverPreview').src = url.trim();
+      }
+
+      function previewCoverFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          document.getElementById('editCoverUrl').value = e.target.result;
+          document.getElementById('coverPreview').src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function saveProfile(event) {
+        event.preventDefault();
+        myProfile.nombre = document.getElementById('editName').value.trim();
+        myProfile.edad = Number(document.getElementById('editAge').value);
+        myProfile.ciudad = document.getElementById('editCity').value.trim();
+        myProfile.avatar = document.getElementById('editAvatarUrl').value.trim() || myProfile.avatar;
+        myProfile.cover = document.getElementById('editCoverUrl').value.trim() || myProfile.cover;
+        localStorage.setItem('hot_or_not_profile', JSON.stringify(myProfile));
+
+        const me = {
+          nombre: myProfile.nombre,
+          edad: myProfile.edad,
+          foto: myProfile.avatar,
+          ciudad: myProfile.ciudad,
+          estadoZona: myProfile.estadoZona || 'Disponible esta noche',
+          rating: 9.7,
+          x: 50,
+          y: 50
+        };
+
+        const existing = state.perfiles.findIndex(p => p.nombre.toLowerCase() === myProfile.nombre.toLowerCase());
+        if (existing >= 0) state.perfiles[existing] = { ...state.perfiles[existing], ...me };
+        else state.perfiles.unshift(me);
+
+        localStorage.setItem('hot_or_not_global_pool', JSON.stringify(state.perfiles));
+
+        updateProfileUI();
+        renderRadar();
+        renderRanking();
+        loadDiscover();
+        closeProfileModal();
+        playSound();
+      }
+
+      function updateProfileUI() {
+        document.getElementById('myName').textContent = `${myProfile.nombre}, ${myProfile.edad}`;
+        document.getElementById('myAvatar').src = myProfile.avatar;
+        document.getElementById('myCover').src = myProfile.cover;
+      }
+
+      function renderRatingButtons() {
+        const container = document.getElementById('ratingButtons');
+        container.innerHTML = '';
+        for (let i = 1; i <= 10; i++) {
+          const btn = document.createElement('button');
+          btn.className = `py-2 rounded-xl text-[11px] font-black border ${i === 10 ? 'bg-pink-600 text-white border-pink-500' : 'bg-black/30 text-slate-300 border-white/10 hover:bg-white/10 hover:text-white'}`;
+          btn.textContent = i;
+          btn.onclick = () => vote(i);
+          container.appendChild(btn);
+        }
+      }
+
+      function loadDiscover() {
+        if (!state.perfiles.length) return;
+        const pool = [...state.perfiles].sort(() => Math.random() - 0.5);
+        state.perfiles = pool;
+        state.currentProfile = state.perfiles[state.discoverIndex % state.perfiles.length];
+        state.discoverIndex = (state.discoverIndex + 1) % state.perfiles.length;
+
+        const profile = state.currentProfile;
+        if (!profile) return;
+        document.getElementById('discoverImage').src = profile.foto || profile.avatar || profile.imagen || '';
+        document.getElementById('discoverName').textContent = `${profile.nombre}, ${profile.edad}`;
+        document.getElementById('discoverCity').textContent = profile.ciudad || 'España';
+      }
+
+      function vote(score) {
+        playSound();
+        if (!state.currentProfile) return;
+        if (score >= 9) {
+          state.matchPending = state.currentProfile;
+          document.getElementById('matchText').textContent = `¡${state.currentProfile.nombre} ha sentido tu vibración neural (${score}/10)!`;
+          document.getElementById('matchModal').classList.remove('hidden');
+          document.getElementById('matchModal').classList.add('flex');
+        }
+        loadDiscover();
+      }
+
+      function closeMatchModal() {
+        document.getElementById('matchModal').classList.add('hidden');
+        document.getElementById('matchModal').classList.remove('flex');
+      }
+
+      function openChatFromMatch() {
+        closeMatchModal();
+        const target = state.matchPending || state.currentProfile || state.perfiles[0];
+        openDirectChat(target, `¡Hola ${myProfile.nombre}! He visto que nos hemos dado match. ¿Te apetece quedar hoy? ✨`);
+      }
+
+      function openDirectChat(profile, introMsg) {
+        playSound();
+        document.getElementById('chatName').textContent = profile.nombre;
+        document.getElementById('chatAvatar').src = profile.foto || profile.avatar || profile.imagen || '';
+        document.getElementById('chatMessages').innerHTML = '';
+
+        const center = document.createElement('div');
+        center.className = 'max-w-[85%] rounded-2xl border border-white/10 bg-black/50 p-2.5 text-[12px] text-slate-200';
+        center.textContent = introMsg || `¡Hola! He visto tu estado: "${profile.estadoZona || 'Disponible'}". ¿Te apetece quedar esta noche? ✨`;
+        document.getElementById('chatMessages').appendChild(center);
+
+        document.getElementById('chatModal').classList.remove('hidden');
+        document.getElementById('chatModal').classList.add('flex');
+      }
+
+      function closeChatModal() {
+        document.getElementById('chatModal').classList.add('hidden');
+        document.getElementById('chatModal').classList.remove('flex');
+      }
+
+      function chatKey(event) {
+        if (event.key === 'Enter') sendChatMessage();
+      }
+
+      function sendChatMessage() {
+        const input = document.getElementById('chatInput');
+        const text = input.value.trim();
+        if (!text) return;
+
+        const messages = document.getElementById('chatMessages');
+        const me = document.createElement('div');
+        me.className = 'ml-auto max-w-[85%] rounded-2xl bg-gradient-to-r from-pink-600 to-rose-500 p-2.5 text-[12px] text-white';
+        me.textContent = text;
+        messages.appendChild(me);
+        input.value = '';
+        messages.scrollTop = messages.scrollHeight;
+
+        playSound();
+
+        setTimeout(() => {
+          const reply = document.createElement('div');
+          reply.className = 'max-w-[85%] rounded-2xl border border-white/10 bg-black/50 p-2.5 text-[12px] text-slate-200';
+          reply.textContent = '¡Me encanta tu mensaje! Hablemos más tarde por aquí. 🔥';
+          messages.appendChild(reply);
+          messages.scrollTop = messages.scrollHeight;
+        }, 900);
+      }
+
+      function initMemoryGame() {
+        const grid = document.getElementById('memoryGrid');
+        grid.innerHTML = '';
+        state.juegoParejas = 0;
+        state.cartaPrevia = null;
+        document.getElementById('gameStatus').textContent = '';
+
+        const todayKey = 'hot_or_not_game_' + new Date().toDateString();
+        const blocked = localStorage.getItem(todayKey);
+        if (blocked === 'blocked' || state.juegoIntentos <= 0) {
+          document.getElementById('gameLock').classList.remove('hidden');
+          document.getElementById('triesLabel').textContent = 'Intentos agotados';
+          return;
+        }
+
+        document.getElementById('gameLock').classList.add('hidden');
+        document.getElementById('triesLabel').textContent = `Intentos restantes: ${state.juegoIntentos} / 2`;
+
+        const pairPool = state.perfiles.slice(0, 2);
+        const deck = [...pairPool, ...pairPool].sort(() => Math.random() - 0.5);
+
+        deck.forEach((profile, idx) => {
+          const shell = document.createElement('div');
+          shell.className = 'card-shell h-32';
+          shell.innerHTML = `
+            <div class="card-3d rounded-2xl shadow-xl" id="card-${idx}" onclick="flipMemoryCard(${idx}, '${profile.nombre}', '${profile.foto || profile.avatar || profile.imagen}')">
+              <div class="card-face flex items-center justify-center glass text-3xl text-white">❓</div>
+              <div class="card-face card-back overflow-hidden border border-pink-500">
+                <img src="${profile.foto || profile.avatar || profile.imagen}" class="w-full h-full object-cover" />
+              </div>
+            </div>
+          `;
+          grid.appendChild(shell);
+        });
+      }
+
+      function flipMemoryCard(index, name, photo) {
+        if (state.juegoIntentos <= 0) return;
+        const card = document.getElementById('card-' + index);
+        if (!card || card.parentElement.classList.contains('flipped') || card.dataset.done === 'true') return;
+
+        card.parentElement.classList.add('flipped');
+        playSound();
+
+        if (!state.cartaPrevia) {
+          state.cartaPrevia = { index, name, photo, card };
+          return;
+        }
+
+        if (state.cartaPrevia.name === name && state.cartaPrevia.index !== index) {
+          const prev = state.cartaPrevia;
+          prev.card.dataset.done = 'true';
+          card.dataset.done = 'true';
+          state.cartaPrevia = null;
+          state.juegoParejas += 1;
+
+          if (state.juegoParejas === 2) {
+            document.getElementById('gameStatus').innerHTML = '<span class="text-emerald-400">🎉 Match Memory completado</span>';
+            setTimeout(() => {
+              state.matchPending = state.perfiles[0];
+              document.getElementById('matchText').textContent = `¡Has ganado el Memory Match con ${state.perfiles[0].nombre}!`;
+              document.getElementById('matchModal').classList.remove('hidden');
+              document.getElementById('matchModal').classList.add('flex');
+            }, 600);
+          }
+        } else {
+          const prev = state.cartaPrevia;
+          state.cartaPrevia = null;
+          state.juegoIntentos -= 1;
+          document.getElementById('triesLabel').textContent = `Intentos restantes: ${state.juegoIntentos} / 2`;
+
+          if (state.juegoIntentos <= 0) {
+            localStorage.setItem('hot_or_not_game_' + new Date().toDateString(), 'blocked');
+            document.getElementById('gameLock').classList.remove('hidden');
+          }
+
+          setTimeout(() => {
+            prev.card.parentElement.classList.remove('flipped');
+            card.parentElement.classList.remove('flipped');
+          }, 700);
+        }
+      }
+
+      function loadVersus() {
+        const pool = state.perfiles.length ? state.perfiles : starterProfiles;
+        let a = pool[Math.floor(Math.random() * pool.length)];
+        let b = pool[Math.floor(Math.random() * pool.length)];
+        while (b && b.nombre === a.nombre) {
+          b = pool[Math.floor(Math.random() * pool.length)];
+        }
+        state.versus = [a, b];
+
+        document.getElementById('versus1Image').src = a.foto || a.avatar || a.imagen;
+        document.getElementById('versus1Name').textContent = `${a.nombre}, ${a.edad}`;
+        document.getElementById('versus2Image').src = b.foto || b.avatar || b.imagen;
+        document.getElementById('versus2Name').textContent = `${b.nombre}, ${b.edad}`;
+      }
+
+      function voteVersus(index) {
+        playSound();
+        const winner = state.versus[index];
+        if (!winner) return;
+        winner.rating = Number((winner.rating + 0.1).toFixed(1));
+        renderRanking();
+        loadVersus();
+      }
+
+      function renderRanking() {
+        const list = document.getElementById('rankingList');
+        const sorted = [...state.perfiles].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        list.innerHTML = '';
+
+        sorted.slice(0, 10).forEach((person, index) => {
+          const row = document.createElement('div');
+          row.className = 'rounded-2xl border border-white/10 bg-black/20 p-3 flex items-center justify-between';
+          row.innerHTML = `
+            <div class="flex items-center gap-3">
+              <div class="w-7 h-7 rounded-xl bg-pink-500/20 text-pink-300 border border-pink-500/20 flex items-center justify-center text-[11px] font-black">${index + 1}</div>
+              <img src="${person.foto || person.avatar || person.imagen}" class="w-10 h-10 object-cover rounded-xl border border-white/10" />
+              <div>
+                <div class="text-[12px] font-black text-white">${person.nombre}, ${person.edad}</div>
+                <div class="text-[10px] text-slate-400">${person.ciudad || 'España'}</div>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-[12px] font-black text-pink-400">🔥 ${Number(person.rating || 9.0).toFixed(1)}</div>
+              <div class="text-[9px] text-cyan-300 font-black uppercase tracking-[0.12em]">Verified</div>
+            </div>
+          `;
+          list.appendChild(row);
+        });
+      }
+
+      function handlePostSubmit(event) {
+        event.preventDefault();
+        const text = document.getElementById('postText').value.trim();
+        const image = document.getElementById('postPreview').src || '';
+        if (!text && !image) return;
+
+        myProfile.posts.unshift({
+          id: Date.now(),
+          text,
+          image,
+          likes: 0,
+          date: 'Hace un momento'
+        });
+
+        localStorage.setItem('hot_or_not_profile', JSON.stringify(myProfile));
+        document.getElementById('postText').value = '';
+        removePostImage();
+        renderFeed();
+        playSound();
+      }
+
+      function previewPostImage(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          const preview = document.getElementById('postPreview');
+          preview.src = e.target.result;
+          document.getElementById('postPreviewWrap').classList.remove('hidden');
+          document.getElementById('fileKey').textContent = 'Cambiar foto';
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function removePostImage() {
+        document.getElementById('postPreviewWrap').classList.add('hidden');
+        document.getElementById('postPreview').src = '';
+        document.getElementById('postImageInput').value = '';
+        document.getElementById('fileKey').textContent = 'Añadir foto';
+      }
+
+      function renderFeed() {
+        const feed = document.getElementById('feed');
+        if (!myProfile.posts || myProfile.posts.length === 0) {
+          feed.innerHTML = '<div class="rounded-2xl border border-white/10 bg-black/20 p-5 text-center text-xs text-slate-400">Aún no hay publicaciones. ¡Comparte algo con la comunidad!</div>';
+          return;
+        }
+
+        feed.innerHTML = '';
+        myProfile.posts.forEach(post => {
+          const card = document.createElement('div');
+          card.className = 'rounded-[24px] border border-white/10 bg-black/20 p-3';
+          card.innerHTML = `
+            <div class="flex items-center gap-3 mb-2.5">
+              <img src="${myProfile.avatar}" class="w-10 h-10 rounded-xl object-cover border border-pink-500/30" />
+              <div>
+                <div class="text-[12px] font-black text-white">${myProfile.nombre}</div>
+                <div class="text-[9px] text-slate-400">${post.date}</div>
+              </div>
+            </div>
+            ${post.text ? `<p class="mb-2.5 text-[12px] leading-relaxed text-slate-200">${post.text}</p>` : ''}
+            ${post.image ? `<div class="mb-2.5 overflow-hidden rounded-2xl border border-white/10"><img src="${post.image}" class="w-full h-52 object-cover" /></div>` : ''}
+            <div class="flex items-center justify-between border-t border-white/5 pt-2">
+              <button onclick="likePost(${post.id})" class="text-[11px] font-black uppercase tracking-[0.12em] text-pink-300">💖 ${post.likes} Likes</button>
+              <span class="text-[9px] font-black uppercase tracking-[0.12em] text-cyan-300">Publicación elite</span>
+            </div>
+          `;
+          feed.appendChild(card);
+        });
+      }
+
+      function likePost(postId) {
+        const post = myProfile.posts.find(p => p.id === postId);
+        if (!post) return;
+        post.likes += 1;
+        localStorage.setItem('hot_or_not_profile', JSON.stringify(myProfile));
+        renderFeed();
+        playSound();
+      }
+
+      function playSound() {
+        if (!state.soundEnabled) return;
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(620, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.09);
+          gain.gain.setValueAtTime(0.06, ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.12);
+        } catch (e) {}
+      }
+
+      document.getElementById('soundToggle').addEventListener('click', () => {
+        state.soundEnabled = !state.soundEnabled;
+        document.getElementById('soundToggle').textContent = state.soundEnabled ? '🔊' : '🔇';
+      });
+
+      window.onload = initApp;
+    </script>
+  </body>
+</html>
